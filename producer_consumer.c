@@ -6,7 +6,9 @@
 #include <unistd.h>
 #include <stdint.h>
 
-
+// forward declare mt functions to avoid compiler errors (janky? maybe)
+unsigned long genrand_int32(void);
+void init_genrand(unsigned long);
 
 struct buffer_item {
 	int num;
@@ -19,9 +21,10 @@ struct buffer {
 };
 
 sem_t mutex, items, spaces;
-struct buffer_item buffer[32];
 struct buffer buff;
 
+// taken from the may 15 2014 software implementation guide for the Intel Digital Random Number Generator
+// random number is stored in rand, return value indicates success of operator
 int rdrand32_step (uint32_t *rand) {
 	unsigned char ok;
 	__asm__ __volatile__ ("rdrand %0; setc %1"
@@ -68,7 +71,6 @@ struct buffer_item get_item_from_buffer() {
 	extracted_item = buff.items[0];
 	if (buff.size > 1) {
 		for (i = 1; i <= buff.size; i++) {
-			// buffer[i - 1] = buffer[i];
 			buff.items[i - 1] = buff.items[i];
 		}
 	}
@@ -78,10 +80,7 @@ struct buffer_item get_item_from_buffer() {
 }
 
 void add_item_to_buffer(struct buffer_item new_item) {
-	// int buff_size;
-	// sem_getvalue(&items, &buff_size);
-	printf("Buff size: %d\n", buff.size);
-	// buffer[buff_size] = new_item;
+	// printf("Buff size: %d\n", buff.size);
 	buff.items[buff.size] = new_item;
 	buff.size++;
 }
@@ -105,16 +104,15 @@ void* producer(void* args) {
 		sem_wait(&spaces);
 		sem_wait(&mutex);
 		// add event to buffer
-		printf("Adding item with num %d and wait %d\n", new_item.num, new_item.wait_period);
+		// printf("Adding item with num %d and wait %d\n", new_item.num, new_item.wait_period);
 		fflush(stdout);
-		//buffer[sem_val - 1] = new_item;
 		add_item_to_buffer(new_item);
 		// signal items semaphore
 		sem_post(&items);
 		// signal mutex semaphore
 		sem_post(&mutex);
-		sem_val = get_rand_num(2, 7);
-		printf("Producer: sleeping for %d seconds\n", sem_val);
+		sem_val = get_rand_num(3, 7);
+		// printf("Producer: sleeping for %d seconds\n", sem_val);
 		sleep(sem_val);
 	}
 }
@@ -136,15 +134,15 @@ void* consumer(void* args) {
 		sem_post(&spaces);
 		// process event
 		sleep(item.wait_period);
-		printf("Val: %d, slept for %d seconds\n", item.num, item.wait_period);
+		printf("Processed item with val: %d, slept for %d seconds\n", item.num, item.wait_period);
 		fflush(stdout);
 	}
 
 }
 
 int main(int arc, char* argv[]) {
-	// struct timezone tz;
 	struct timeval tv;
+	// seed rand generator with the time
 	long seed;
 	gettimeofday(&tv, NULL);
 	seed = tv.tv_usec;
@@ -152,9 +150,11 @@ int main(int arc, char* argv[]) {
 	pthread_t producer_thread;
 	init_genrand(seed);
 	buff.size = 0;
+	// init mutexes per little  book of semaphores
 	sem_init(&mutex, 0, 1);	
 	sem_init(&items, 0, 0);
 	sem_init(&spaces, 0, 32);
+	// start functions
 	pthread_create(&producer_thread, NULL, producer, NULL);
 	consumer(NULL);
 	return 0;

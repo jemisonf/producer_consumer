@@ -4,6 +4,7 @@
 #include <semaphore.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <stdint.h>
 
 
 
@@ -20,6 +21,13 @@ struct buffer {
 sem_t mutex, items, spaces;
 struct buffer_item buffer[32];
 struct buffer buff;
+
+int rdrand32_step (uint32_t *rand) {
+	unsigned char ok;
+	__asm__ __volatile__ ("rdrand %0; setc %1"
+			: "=r" (*rand), "=qm" (ok));
+	return (int) ok;
+}
 
 // returns a positive randum number n such that min <= n <= max
 // if no min/max is required, pass -1 for that value instead 
@@ -41,8 +49,10 @@ int get_rand_num(int min, int max) {
 
 	if (ecx & 0x40000000){
 		//use rdrand
-		// use mt19937
+		rdrand32_step(&num);
+
 	} else {
+		// use mt
 		num = genrand_int32();
 	}
 	if (max > 0) 
@@ -133,10 +143,10 @@ void* consumer(void* args) {
 }
 
 int main(int arc, char* argv[]) {
-	struct timezone tz;
+	// struct timezone tz;
 	struct timeval tv;
 	long seed;
-	gettimeofday(&tv, &tz);
+	gettimeofday(&tv, NULL);
 	seed = tv.tv_usec;
 	printf("Seed: %ld\n", seed);
 	pthread_t producer_thread;
